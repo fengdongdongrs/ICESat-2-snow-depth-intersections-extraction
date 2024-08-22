@@ -1,0 +1,151 @@
+import pandas as pd
+from geopy import distance
+import os
+
+def calculate_and_filter_difference(file1_path, file2_path, output_file1, output_file2):
+
+    # 读取两个csv文件
+    df1 = pd.read_csv(file1_path)
+    df2 = pd.read_csv(file2_path)
+
+    # 获取第一个文件中的经纬度列名
+    lat_col1 = "lat"  # 替换为第一个文件中的纬度列名
+    lon_col1 = "lon"  # 替换为第一个文件中的经度列名
+
+    # 获取第二个文件中的经纬度列名
+    lat_col2 = "lat"  # 替换为第二个文件中的纬度列名
+    lon_col2 = "lon"  # 替换为第二个文件中的经度列名
+
+    # 新建一个空的DataFrame用于存储计算结果
+    result_df = pd.DataFrame(columns=["distance"])  # 根据需要可以添加其他列名
+
+    # 遍历两个文件的每一行，计算距离并存储到结果DataFrame中
+    for idx, row1 in df1.iterrows():
+        lat1, lon1 = row1[lat_col1], row1[lon_col1]
+        lat2, lon2 = df2.loc[idx, lat_col2], df2.loc[idx, lon_col2]
+
+        # 计算两点之间的距离
+        dist = distance.distance((lat1, lon1), (lat2, lon2)).meters
+
+        # 将距离添加到结果DataFrame中
+        result_df.loc[idx] = [dist]
+
+    # 将 date 列复制为 date-non 列
+    df1['snow date'] = df2['date']
+    df2['snow-free date'] = df1['date']
+
+    # 将距离列添加到两个输出文件中
+    df1['distance'] = result_df
+    df2['distance'] = result_df
+
+    # 判断segment_snowcover列的值是否都为1，如果是则设置SD1、SD2和SD为0
+    if all(df1['segment_snowcover'] == 1) and all(df2['segment_snowcover'] == 1) or \
+            all(df1['segment_snowcover'] == 0) and all(df2['segment_snowcover'] == 0) or \
+            all(df1['segment_snowcover'] == 3) and all(df2['segment_snowcover'] == 3):
+
+        df1['SD1'] = 0
+        df1['SD2'] = 0
+        df1['SD'] = 0
+
+        df2['SD1'] = 0
+        df2['SD2'] = 0
+        df2['SD'] = 0
+    else:
+        # 否则，计算SD1和SD2的差值
+        df1['SD1'] = df2['h_te_best_fit'] - df1['h_te_best_fit']
+        df1['SD2'] = df2['dem_h'] - df1['dem_h']
+
+        df2['SD1'] = df2['h_te_best_fit'] - df1['h_te_best_fit']
+        df2['SD2'] = df2['dem_h'] - df1['dem_h']
+
+    # 根据规则筛选数据并添加SD列
+    def process_row(row):
+        if all([row['segment_snowcover'] == 1]):
+            return pd.Series({'SD1': 0, 'SD2': 0, 'SD': 0})
+        if all([row['segment_snowcover'] == 0]):
+            return pd.Series({'SD1': 0, 'SD2': 0, 'SD': 0})
+        if all([row['segment_snowcover'] == 3]):
+            return pd.Series({'SD1': 0, 'SD2': 0, 'SD': 0})
+
+        sd1 = row['SD1']
+        sd2 = row['SD2']
+
+        if sd1 < 0 and sd2 < 0:
+            return None
+        elif sd1 > 0 and sd2 > 0 and sd1 < 2 and sd2 < 2:
+            return pd.Series({'SD1': sd1, 'SD2': sd2, 'SD': min(sd1, sd2)})
+        elif sd2 > 0 and sd2 <= 2 and (sd1 < 0 or sd1 > 2):
+            return pd.Series({'SD1': sd1, 'SD2': sd2, 'SD': sd2})
+        elif sd1 > 0 and sd1 <= 2 and (sd2 < 0 or sd2 > 2):
+            return pd.Series({'SD1': sd1, 'SD2': sd2, 'SD': sd1})
+        else:
+            return None
+
+    df1[['SD1', 'SD2', 'SD']] = df2.apply(process_row, axis=1)
+    df2[['SD1', 'SD2', 'SD']] = df2.apply(process_row, axis=1)
+
+    # 将SD的单位从米转换为厘米
+    df1['SD'] = df1['SD'] * 100
+    df2['SD'] = df2['SD'] * 100
+
+    # 四舍五入保留一位小数
+    df1['SD'] = df1['SD'].round(1)
+    df2['SD'] = df2['SD'].round(1)
+
+    # 根据过滤条件保存数据并保存到两个新的csv文件
+    df1_filtered = df1.dropna()
+    df2_filtered = df2.dropna()
+
+    # 删除 SD1 列和 SD2 列
+    df1_filtered = df1_filtered.drop(['SD1', 'SD2'], axis=1)
+    df2_filtered = df2_filtered.drop(['SD1', 'SD2'], axis=1)
+
+    # 重新排列列的顺序
+    df1_filtered = df1_filtered[['file encoding'] + [col for col in df1_filtered if col != 'file encoding']]
+    df2_filtered = df2_filtered[['file encoding'] + [col for col in df2_filtered if col != 'file encoding']]
+
+    df1_filtered.to_csv(output_file1, index=False)
+    df2_filtered.to_csv(output_file2, index=False)
+
+def remove_same(l_string, r_string):
+    l_list = list(l_string)
+    r_list = list(r_string)
+    lenth=min(len(l_list),len(r_list))
+    for i in range(lenth):
+        if l_list[0] == r_list[0]:
+            l_list.pop(0)
+            r_list.pop(0)
+
+    str1 = ''.join(l_list)
+    str2 = ''.join(r_list)
+
+    if len(str1) > len(str2):
+        return str1
+    if len(str1) < len(str2):
+        return str2
+
+# 查找指定文件夹下所有相同名称的文件
+import os
+def get_files_by_suffix(path, suffix):
+
+    out_files = []
+    in_files=[]
+
+    for root, dirs, files_list in os.walk(path):
+        for file_name in files_list:
+             if file_name.endswith(suffix):
+                move_path = remove_same(root, path)
+                new_fold = path + '_SD' + move_path
+                if not os.path.exists(new_fold):
+                    os.makedirs(new_fold)
+                in_files.append(os.path.join(root,file_name))
+                out_files.append(os.path.join(new_fold,file_name))
+    return in_files,out_files
+
+
+input,output=get_files_by_suffix(r'D:\0.snow\4.result_ZGCS1','')
+for i in range(int(len(input)/2)):
+    print(2*i, 1+2*i)
+    calculate_and_filter_difference(input[2*i], input[2*i+1], output[i*2], output[2*i+1])
+
+
