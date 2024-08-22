@@ -1,0 +1,201 @@
+import h5py
+import glob
+import numpy as np
+import pandas as pd
+import os
+
+def read_atl08(fileName, outdir='date', bbox=None):
+    # Each beam is a group
+    group = ['/gt1l', '/gt1r', '/gt2l', '/gt2r', '/gt3l', '/gt3r']
+
+    # Loop trough beams
+    for k, g in enumerate(group):
+
+        data = {}
+
+        try:
+            # Load vars into memory(include as you want)
+            with h5py.File(fileName, 'r') as fi:
+
+                data['lat'] = fi[g + '/land_segments/latitude'][:]
+
+                data['lon'] = fi[g + '/land_segments/longitude'][:]
+
+                data['h_te_best_fit'] = fi[g + '/land_segments/terrain/h_te_best_fit'][:]
+
+                data['h_te_best_fit_20m'] = fi[g + '/land_segments/terrain/h_te_best_fit_20m'][:]
+
+                data['dem_h'] = fi[g + '/land_segments/dem_h'][:]
+
+                data['h_canopy'] = fi[g + '/land_segments/canopy/h_canopy'][:]
+
+                data['h_max_canopy'] = fi[g + '/land_segments/canopy/h_max_canopy'][:]
+
+                data['segment_snowcover'] = fi[g + '/land_segments/segment_snowcover'][:]
+
+                data['segment_landcover'] = fi[g + '/land_segments/segment_landcover'][:]
+
+                data['h_te_best_fit'] = fi[g + '/land_segments/terrain/h_te_best_fit'][:]
+
+                data['canopy_h_metrics'] = fi[g + '/land_segments/canopy/canopy_h_metrics'][:,[3,8,10,12,13,14,15,16,17]]
+
+                data['centroid_height'] = fi[g + '/land_segments/canopy/centroid_height'][:]
+
+                data['h_dif_canopy'] = fi[g + '/land_segments/canopy/h_dif_canopy'][:]
+
+                data['h_mean_canopy'] = fi[g + '/land_segments/canopy/h_mean_canopy'][:]
+
+                data['h_median_canopy'] = fi[g + '/land_segments/canopy/h_median_canopy'][:]
+
+                data['h_min_canopy'] = fi[g + '/land_segments/canopy/h_min_canopy'][:]
+
+                data['h_te_uncertainty'] = fi[g + '/land_segments/terrain/h_te_uncertainty'][:]
+
+                data['h_canopy_uncertainty'] = fi[g + '/land_segments/canopy/h_canopy_uncertainty'][:]
+
+                data['terrain_slope'] = fi[g + '/land_segments/terrain/terrain_slope'][:]
+
+                data['night_flag'] = fi[g + '/land_segments/night_flag'][:]  # 0=day and 1 = night
+
+                data['time_coverage_start'] = fi[g + 'time_coverage_start'][:]
+
+                data['snr'] = fi[g + '/land_segments/snr'][:]
+
+                data['cloud_flag_atm'] = fi[g + '/land_segments/cloud_flag_atm'][:]
+                
+                data['classed_pc_flag'] = fi[g +'/land_segments/signal_photons/classed_pc_flag'][:]
+                
+                data['classed_pc_indx'] = fi[g +'/land_segments/signal_photons/classed_pc_indx'][:]
+                
+                data['ph_segment_id'] = fi[g +'/land_segments/signal_photons/ph_segment_id'][:]
+                
+                data['canopy_rh_conf'] = fi[g + '/land_segments/canopy/canopy_rh_conf'][:]
+
+                beam_type = fi[g].attrs['atlas_beam_type'].decode()  # strong/weak(str)
+
+        except:
+            print('skeeping group', g)
+            print('in file', fileName)
+            continue
+
+        # 2） FIlter data according region and quality 
+        # select a region of interst
+        if bbox:
+            lonmin, lonmax, latmin, latmax = bbox
+            bbox_mask = (data['lon'] >= lonmin) & (data['lon'] <= lonmax) & (data['lat'] >= latmin) & (
+                    data['lat'] <= latmax)
+        else:
+            bbox_mask = np.ones_like(data['lat'], dtype=bool)
+
+        # only keep good data(quality flag + threshold + bbox) 以mask来排除
+
+        mask = (data['watermask'] == 0) & (data['night_flag'] == 0) & (bbox_mask == 1) & (beam_type == 'strong')  # 白天强
+        mask = (data['watermask'] == 0) & (data['night_flag'] == 1) & (bbox_mask == 1) & (beam_type == 'strong')  # 晚上强
+        mask = (data['watermask'] == 0) & (data['night_flag'] == 1) & (bbox_mask == 1) & (beam_type == 'weak')  # 晚上弱
+        mask = (data['night_flag'] == 0) & (bbox_mask == 1)  # 白天 弱强
+        mask = (data['night_flag'] == 1) & (bbox_mask == 1) & (beam_type == 'strong')
+        mask = (bbox_mask == 1)
+
+        # If no data left, skeep 跳过
+        if not any(mask): continue
+
+        # update data variabled
+        for k, v in data.items():
+           data[k] = v[mask]
+
+        # 3）Save selected data #
+
+        # Define ouput dir and file
+        outfile = outdir + '\\' + os.path.basename(fileName).replace('.h5', '_' + g[1:] + '.h5')
+        outXlsFile = outdir + '\\' + os.path.basename(fileName).replace('.h5', '_' + g[1:] + '.csv')
+
+        lat = pd.DataFrame(data['lat'])
+        lon = pd.DataFrame(data['lon'])
+        h_te_best_fit = pd.DataFrame(data['h_te_best_fit'])
+        h_te_best_fit_20m = pd.DataFrame(data['h_te_best_fit_20m'])
+        dem_h = pd.DataFrame(data['dem_h'])
+        h_canopy = pd.DataFrame(data['h_canopy'])
+        h_max_canopy = pd.DataFrame(data['h_max_canopy'])
+        segment_snowcover = pd.DataFrame(data['segment_snowcover'])
+        segment_landcover = pd.DataFrame(data['segment_landcover'])
+        canopy_h_metrics = pd.DataFrame(data['canopy_h_metrics'])
+        h_dif_canopy = pd.DataFrame(data['h_dif_canopy'])
+        h_mean_canopy = pd.DataFrame(data['h_mean_canopy'])
+        h_median_canopy = pd.DataFrame(data['h_median_canopy'])
+        h_min_canopy = pd.DataFrame(data['h_min_canopy'])
+        h_te_uncertainty = pd.DataFrame(data['h_te_uncertainty'])
+        h_canopy_uncertainty = pd.DataFrame(data['h_canopy_uncertainty'])
+        terrain_slope = pd.DataFrame(data['terrain_slope'])
+        night_flag = pd.DataFrame(data['night_flag'])
+        time_coverage_start = pd.DataFrame(data['time_coverage_start'])
+        snr = pd.DataFrame(data['snr'])
+        cloud_flag_atm = pd.DataFrame(data['cloud_flag_atm'])
+        canopy_rh_conf = pd.DataFrame(data['canopy_rh_conf'])
+        data_date = pd.DataFrame([os.path.basename(fileName)[6:14]] * lat.shape[0], columns=['date'])
+        filename = pd.DataFrame([os.path.basename(fileName)] * lat.shape[0], columns=['file encoding'])
+
+        result = pd.concat([lat,
+                            lon,
+                            h_te_best_fit,
+                            h_te_best_fit_20m,
+                            dem_h,
+                            h_canopy,
+                            h_max_canopy,
+                            segment_snowcover,
+                            segment_landcover,
+                            canopy_h_metrics,
+                            h_dif_canopy,
+                            h_mean_canopy,
+                            h_median_canopy,
+                            h_min_canopy,
+                            h_te_uncertainty,
+                            h_canopy_uncertainty,
+                            terrain_slope,
+                            night_flag,
+                            time_coverage_start,
+                            snr,
+                            cloud_flag_atm,
+                            data_date,
+                            filename
+                            ], axis=1)
+        result_columns = ['lat',
+                          'lon',
+                          'h_te_best_fit',
+                          'h_te_best_fit_20m',
+                          'dem_h',
+                          'h_canopy',
+                          'h_max_canopy',
+                          'segment_snowcover',
+                          'segment_landcover',
+                          'canopy_h_metrics',
+                          'h_dif_canopy',
+                          'h_mean_canopy',
+                          'h_median_canopy',
+                          'h_min_canopy',
+                          'h_te_uncertainty',
+                          'h_canopy_uncertainty',
+                          'terrain_slope',
+                          'night_flag',
+                          'time_coverage_start'
+                          'snr',
+                          'cloud_flag_atm',
+                          'canopy_rh_conf'
+                          "date",
+                          "file encoding"]
+        result.columns = result_columns
+        result.to_csv(outXlsFile, index=False)
+        print('out-->', outXlsFile)
+
+
+if __name__ == '__main__':
+    atl08_base_folder = r"D:\0.snow\ZG\cs"  # 大文件夹路径，包含多个ATL08文件
+    output_folder = r"D:\0.snow\zg2018bu(50&36)\36.40-45N 135-140E\12\12"  # 输出文件夹路径
+    bbox = [135, 1406, 40, 45]  # lonmin, lonmax, latmin, latmax  135°~140°E,40~45°N
+
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    for file_name in os.listdir(atl08_base_folder):
+        if file_name.endswith(".h5"):
+            file_path = os.path.join(atl08_base_folder, file_name)
+            read_atl08(file_path, output_folder)
