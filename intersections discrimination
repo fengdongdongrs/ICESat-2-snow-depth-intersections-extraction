@@ -1,0 +1,141 @@
+import csv
+import os
+from math import sin, cos, sqrt, atan2, radians
+from multiprocessing import Process
+from multiprocessing import Pool  # 引入进程池
+import threading
+
+# 计算两个经纬度之间的距离
+def calculate_distance(lat1, lon1, lat2, lon2):
+
+    R = 6371000 # 地球近似半径（单位：米）
+
+    # 将经纬度转换为弧度
+    lat1_rad = radians(lat1)
+    lon1_rad = radians(lon1)
+    lat2_rad = radians(lat2)
+    lon2_rad = radians(lon2)
+
+    # 计算经度和纬度的差值
+    dlon = lon2_rad - lon1_rad
+    dlat = lat2_rad - lat1_rad
+
+    # 使用Haversine公式计算距离
+    a = sin(dlat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+    distance = R * c
+    return distance
+
+# 过滤经纬度坐标
+def filter_coordinates(file1, file2, threshold, result_container1, result_container2):
+    filtered_coordinates1 = []
+    filtered_coordinates2 = []
+
+    # 打开两个输入文件
+    with open(file1, ) as f1, \
+            open(file2, ) as f2:
+        # 创建CSV读取器
+        reader1 = csv.reader(f1)
+        reader2 = csv.reader(f2)
+
+        # 读取文件中的头部信息
+        headers1 = next(reader1)
+        headers2 = next(reader2)
+
+        # 确定经纬度列的索引
+        lat_idx1 = headers1.index('lat')
+        lon_idx1 = headers1.index('lon')
+        h_te_best_fit1 = headers1.index('h_te_best_fit')
+        dem_h1 = headers1.index('dem_h')
+        segment_snowcover1 = headers1.index('segment_snowcover')
+        segment_landcover1 = headers1.index('segment_landcover')
+        terrain_slope1 = headers1.index('terrain_slope')
+        night_flag1 = headers1.index('night_flag')
+        data1 = headers1.index('date')
+        file_encoding1 = headers1.index('file encoding')
+
+        lat_idx2 = headers2.index('lat')
+        lon_idx2 = headers2.index('lon')
+        h_te_best_fit2 = headers2.index('h_te_best_fit')
+        dem_h2 = headers2.index('dem_h')
+        segment_snowcover2 = headers2.index('segment_snowcover')
+        segment_landcover2 = headers2.index('segment_landcover')
+        terrain_slope2 = headers2.index('terrain_slope')
+        night_flag2 = headers2.index('night_flag')
+        data2 = headers2.index('date')
+        file_encoding2 = headers2.index('file encoding')
+
+        # 读取文件中的经纬度坐标
+        coordinates1 = [(float(row[lat_idx1]), float(row[lon_idx1]), float(row[h_te_best_fit1]), float(row[dem_h1]),
+                         float(row[segment_snowcover1]), float(row[segment_landcover1]), float(row[terrain_slope1]),
+                         float(row[night_flag1]), float(row[data1]), str(row[file_encoding1])) for row in reader1]
+        coordinates2 = [(float(row[lat_idx2]), float(row[lon_idx2]), float(row[h_te_best_fit2]), float(row[dem_h2]),
+                         float(row[segment_snowcover2]), float(row[segment_landcover2]), float(row[terrain_slope2]),
+                         float(row[night_flag2]), float(row[data2]), str(row[file_encoding2])) for row in reader2]
+
+        for coord1 in coordinates1:  # 遍历第一个文件中的坐标
+            for coord2 in coordinates2:   # 遍历第二个文件中的坐标
+                distance = calculate_distance(coord1[0], coord1[1], coord2[0], coord2[1])   # 计算两个坐标之间的距离
+                # 如果距离小于等于阈值，则保存坐标并跳出内层循环
+                if distance <= threshold:
+                    filtered_coordinates1.append(coord1)
+                    filtered_coordinates2.append(coord2)
+                    break
+
+    return filtered_coordinates1, filtered_coordinates2
+
+# 保持原始函数不变
+def save_coordinates_to_csv1(coordinates, output_file):
+    with open(output_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            ['lat', 'lon', 'h_te_best_fit', 'dem_h', 'segment_snowcover', 'segment_landcover', 'terrain_slope',
+             'night_flag', 'date', 'file encoding'])
+        writer.writerows(coordinates)
+
+def save_coordinates_to_csv2(coordinates, output_file):
+    with open(output_file, 'a+', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(coordinates)
+
+def save_finall(m, n, filter1, filter2, save1, save2, threshold, result_container1, result_container2):
+    filtered_coordinates1, filtered_coordinates2 = filter_coordinates(filter1, filter2, threshold, result_container1, result_container2)
+    if m == 0 and n == 0:
+        save_coordinates_to_csv1(filtered_coordinates1, save1)
+        save_coordinates_to_csv1(filtered_coordinates2, save2)
+    else:
+        save_coordinates_to_csv2(filtered_coordinates1, save1)
+        save_coordinates_to_csv2(filtered_coordinates2, save2)
+
+def process_csv_files(i, j, inputfolder1, inputfolder2, save1, save2, threshold, result_container1, result_container2, csv_files1, csv_files2):
+    csv_file1 = inputfolder1 + '\\' + csv_files1[i]
+    csv_file2 = inputfolder2 + '\\' + csv_files2[j]
+    save_finall(i, j, csv_file1, csv_file2, save1, save2, threshold, result_container1, result_container2)
+
+if __name__ == "__main__":
+    inputfolder1 = r"D:\0.snow\zg2018bu-3\63\4\4-goal"
+    inputfolder2 = r"D:\0.snow\zg2018bu-3\63\4\4"
+    save1 = r"D:\0.snow\zg2018bu-3\63\4\snow.csv"
+    save2 = r"D:\0.snow\zg2018bu-3\63\4\freesnow.csv"
+    csv_files1 = [file for file in os.listdir(inputfolder1) if file.endswith('.csv')]
+    csv_files2 = [file for file in os.listdir(inputfolder2) if file.endswith('.csv')]
+
+    # 创建进程池
+    pool = Pool(processes=5)  # 设置为你希望的进程数量
+
+    # Set threshold and result container (can be empty lists to store data if needed)
+    threshold = 17  # Set distance threshold
+    result_container1 = []
+    result_container2 = []
+
+    # 使用进程池的map方法来处理任务
+    pool.starmap(process_csv_files, [(i, j, inputfolder1, inputfolder2, save1, save2, threshold, result_container1, result_container2, csv_files1, csv_files2)
+                                     for i in range(len(csv_files1)) for j in range(len(csv_files2))])
+
+    # 关闭进程池
+    pool.close()
+    pool.join()
+
+
+
