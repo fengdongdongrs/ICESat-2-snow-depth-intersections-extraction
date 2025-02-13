@@ -5,16 +5,14 @@ import pandas as pd
 import os
 
 def read_atl08(fileName, outdir='date', bbox=None):
-    # Each beam is a group
+
     group = ['/gt1l', '/gt1r', '/gt2l', '/gt2r', '/gt3l', '/gt3r']
 
-    # Loop trough beams
     for k, g in enumerate(group):
 
         data = {}
 
         try:
-            # Load vars into memory(include as you want)
             with h5py.File(fileName, 'r') as fi:
 
                 data['lat'] = fi[g + '/land_segments/latitude'][:]
@@ -78,8 +76,6 @@ def read_atl08(fileName, outdir='date', bbox=None):
             print('in file', fileName)
             continue
 
-        # 2） FIlter data according region and quality 
-        # select a region of interst
         if bbox:
             lonmin, lonmax, latmin, latmax = bbox
             bbox_mask = (data['lon'] >= lonmin) & (data['lon'] <= lonmax) & (data['lat'] >= latmin) & (
@@ -87,25 +83,18 @@ def read_atl08(fileName, outdir='date', bbox=None):
         else:
             bbox_mask = np.ones_like(data['lat'], dtype=bool)
 
-        # only keep good data(quality flag + threshold + bbox) 以mask来排除
-
-        mask = (data['watermask'] == 0) & (data['night_flag'] == 0) & (bbox_mask == 1) & (beam_type == 'strong')  # 白天强
-        mask = (data['watermask'] == 0) & (data['night_flag'] == 1) & (bbox_mask == 1) & (beam_type == 'strong')  # 晚上强
-        mask = (data['watermask'] == 0) & (data['night_flag'] == 1) & (bbox_mask == 1) & (beam_type == 'weak')  # 晚上弱
-        mask = (data['night_flag'] == 0) & (bbox_mask == 1)  # 白天 弱强
+        mask = (data['watermask'] == 0) & (data['night_flag'] == 0) & (bbox_mask == 1) & (beam_type == 'strong')  
+        mask = (data['watermask'] == 0) & (data['night_flag'] == 1) & (bbox_mask == 1) & (beam_type == 'strong') 
+        mask = (data['watermask'] == 0) & (data['night_flag'] == 1) & (bbox_mask == 1) & (beam_type == 'weak') 
+        mask = (data['night_flag'] == 0) & (bbox_mask == 1)  
         mask = (data['night_flag'] == 1) & (bbox_mask == 1) & (beam_type == 'strong')
         mask = (bbox_mask == 1)
 
-        # If no data left, skeep 跳过
         if not any(mask): continue
 
-        # update data variabled
         for k, v in data.items():
            data[k] = v[mask]
 
-        # 3）Save selected data #
-
-        # Define ouput dir and file
         outfile = outdir + '\\' + os.path.basename(fileName).replace('.h5', '_' + g[1:] + '.h5')
         outXlsFile = outdir + '\\' + os.path.basename(fileName).replace('.h5', '_' + g[1:] + '.csv')
 
@@ -188,9 +177,9 @@ def read_atl08(fileName, outdir='date', bbox=None):
 
 
 if __name__ == '__main__':
-    atl08_base_folder = r"D:\0.snow\ZG\cs"  # 大文件夹路径，包含多个ATL08文件
-    output_folder = r"D:\0.snow\zg2018bu(50&36)\36.40-45N 135-140E\12\12"  # 输出文件夹路径
-    bbox = [135, 1406, 40, 45]  # lonmin, lonmax, latmin, latmax  135°~140°E,40~45°N
+    atl08_base_folder = r"D:\0.snow\ZG\cs" 
+    output_folder = r"D:\0.snow\zg2018bu(50&36)\36.40-45N 135-140E\12\12"  
+    bbox = [135, 1406, 40, 45]  
 
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
